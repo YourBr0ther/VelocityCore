@@ -79,52 +79,60 @@ os.makedirs(SEPARATED_FOLDER, exist_ok=True)
 os.makedirs(VOICES_FOLDER, exist_ok=True)
 
 
-def convert_voice_seedvc(source_audio, reference_voice, output_path, singing_mode=True):
-    """Convert voice using Seed-VC"""
-    try:
-        print(f"[Seed-VC] Starting conversion...", flush=True)
-        print(f"[Seed-VC] Source: {source_audio}", flush=True)
-        print(f"[Seed-VC] Reference: {reference_voice}", flush=True)
-        print(f"[Seed-VC] Output: {output_path}", flush=True)
+def convert_voice_seedvc(source_audio, reference_voice, output_path, singing_mode=True, semi_tone_shift=0):
+    """Convert voice using Seed-VC with singing voice conversion model
 
-        # Run Seed-VC inference
+    When singing_mode=True, uses the seed-uvit-whisper-base model (200M params, 44kHz)
+    which is specifically designed for singing voice conversion.
+    """
+    try:
+        print(f"[Seed-VC SVC] Starting singing voice conversion...", flush=True)
+        print(f"[Seed-VC SVC] Source: {source_audio}", flush=True)
+        print(f"[Seed-VC SVC] Reference: {reference_voice}", flush=True)
+        print(f"[Seed-VC SVC] Output: {output_path}", flush=True)
+        print(f"[Seed-VC SVC] Singing mode: {singing_mode}, Semi-tone shift: {semi_tone_shift}", flush=True)
+
+        # Run Seed-VC inference with SVC settings
+        # When f0-condition=True, it auto-downloads seed-uvit-whisper-base (SVC model)
         cmd = [
             'python', f'{SEED_VC_PATH}/inference.py',
             '--source', source_audio,
             '--target', reference_voice,
             '--output', os.path.dirname(output_path),
-            '--diffusion-steps', '25',
-            '--f0-condition', 'True' if singing_mode else 'False'
+            '--diffusion-steps', '30',  # 30-50 recommended for singing
+            '--f0-condition', 'True' if singing_mode else 'False',
+            '--semi-tone-shift', str(semi_tone_shift),  # Pitch shift in semitones
+            '--inference-cfg-rate', '0.7'
         ]
-        print(f"[Seed-VC] Command: {' '.join(cmd)}", flush=True)
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=SEED_VC_PATH)
+        print(f"[Seed-VC SVC] Command: {' '.join(cmd)}", flush=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, cwd=SEED_VC_PATH)
 
-        print(f"[Seed-VC] Return code: {result.returncode}", flush=True)
+        print(f"[Seed-VC SVC] Return code: {result.returncode}", flush=True)
         if result.stdout:
-            print(f"[Seed-VC] STDOUT: {result.stdout[:500]}", flush=True)
+            print(f"[Seed-VC SVC] STDOUT: {result.stdout[:800]}", flush=True)
         if result.stderr:
-            print(f"[Seed-VC] STDERR: {result.stderr[:500]}", flush=True)
+            print(f"[Seed-VC SVC] STDERR: {result.stderr[:500]}", flush=True)
 
         # Seed-VC outputs to a directory, find the output file
         # Output format: vc_{source_basename}_{target_basename}_{params}.wav
         output_dir = os.path.dirname(output_path)
         source_basename = os.path.splitext(os.path.basename(source_audio))[0]
-        print(f"[Seed-VC] Looking for output in: {output_dir}", flush=True)
-        print(f"[Seed-VC] Source basename: {source_basename}", flush=True)
+        print(f"[Seed-VC SVC] Looking for output in: {output_dir}", flush=True)
+        print(f"[Seed-VC SVC] Source basename: {source_basename}", flush=True)
         files_in_dir = os.listdir(output_dir)
-        print(f"[Seed-VC] Files in output dir: {files_in_dir[:10]}", flush=True)
+        print(f"[Seed-VC SVC] Files in output dir: {files_in_dir[:10]}", flush=True)
 
         for f in files_in_dir:
             # Match Seed-VC output pattern: vc_{source}_{target}_{params}.wav
             if f.startswith(f'vc_{source_basename}') and f.endswith('.wav'):
                 actual_output = os.path.join(output_dir, f)
                 os.rename(actual_output, output_path)
-                print(f"[Seed-VC] SUCCESS - output renamed to {output_path}", flush=True)
+                print(f"[Seed-VC SVC] SUCCESS - output renamed to {output_path}", flush=True)
                 return True
-        print(f"[Seed-VC] FAILED - no output file found", flush=True)
+        print(f"[Seed-VC SVC] FAILED - no output file found", flush=True)
         return False
     except Exception as e:
-        print(f"[Seed-VC] EXCEPTION: {e}", flush=True)
+        print(f"[Seed-VC SVC] EXCEPTION: {e}", flush=True)
         return False
 
 

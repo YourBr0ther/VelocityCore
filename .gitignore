@@ -1,0 +1,40 @@
+# Voice samples (contain copyrighted audio)
+voices/
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+
+# Output files
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker
+*.log
+
+# Temp files
+*.tmp
+*.temp

@@ -9,6 +9,7 @@ A GPU-accelerated nightcore converter. Transforms YouTube audio into high-energy
 - **Nightcore Processing** - Speed increase with pitch shift, bass boost, stereo widening
 - **Sub-Bass Layer** - Octave-down vocal sub-layer for depth
 - **GPU Acceleration** - CUDA-powered processing for fast conversions
+- **Track Library** - Save and replay converted tracks with autoplay support
 
 ## Requirements
 
@@ -39,6 +40,8 @@ Access the web interface at `http://localhost:5555`
 | `/api/status/<job_id>` | GET | Check job status |
 | `/api/download/<job_id>` | GET | Download result |
 | `/api/stream/<job_id>` | GET | Stream audio |
+| `/api/library` | GET | List saved tracks |
+| `/api/library/<job_id>` | DELETE | Remove track from library |
 
 ### Convert Request
 

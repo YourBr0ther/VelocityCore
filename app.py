@@ -70,9 +70,87 @@ def sanitize_title(title):
 DOWNLOAD_FOLDER = '/app/downloads'
 JOBS_FOLDER = '/app/jobs'
 SEPARATED_FOLDER = '/app/separated'
+LIBRARY_FILE = '/app/jobs/library.json'
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 os.makedirs(JOBS_FOLDER, exist_ok=True)
 os.makedirs(SEPARATED_FOLDER, exist_ok=True)
+
+
+def get_library():
+    """Read the track library"""
+    if os.path.exists(LIBRARY_FILE):
+        try:
+            with open(LIBRARY_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return []
+
+
+def save_library(library):
+    """Save the track library"""
+    with open(LIBRARY_FILE, 'w') as f:
+        json.dump(library, f, indent=2)
+
+
+def add_to_library(job_id, title, filename, file_path):
+    """Add a completed track to the library"""
+    library = get_library()
+
+    # Check if already exists
+    for track in library:
+        if track['job_id'] == job_id:
+            return
+
+    library.insert(0, {
+        'job_id': job_id,
+        'title': title,
+        'filename': filename,
+        'file': file_path,
+        'created_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    })
+
+    save_library(library)
+
+
+def remove_from_library(job_id):
+    """Remove a track from the library and delete its file"""
+    library = get_library()
+    track_to_remove = None
+
+    for track in library:
+        if track['job_id'] == job_id:
+            track_to_remove = track
+            break
+
+    if track_to_remove:
+        # Delete the audio file
+        if os.path.exists(track_to_remove['file']):
+            try:
+                os.remove(track_to_remove['file'])
+            except:
+                pass
+
+        # Delete the job file
+        job_file = os.path.join(JOBS_FOLDER, f'{job_id}.json')
+        if os.path.exists(job_file):
+            try:
+                os.remove(job_file)
+            except:
+                pass
+
+        # Remove from library
+        library = [t for t in library if t['job_id'] != job_id]
+        save_library(library)
+        return True
+
+    return False
+
+
+def get_library_job_ids():
+    """Get set of job IDs in the library (for cleanup exclusion)"""
+    library = get_library()
+    return {track['job_id'] for track in library}
 
 
 def get_job(job_id):
@@ -95,21 +173,31 @@ def save_job(job_id, data):
 
 
 def cleanup_old_files():
-    """Remove files older than 1 hour"""
+    """Remove files older than 1 hour, but preserve library tracks"""
     while True:
         time.sleep(300)  # Check every 5 minutes
         try:
             now = time.time()
-            # Clean up downloads
+            library_ids = get_library_job_ids()
+
+            # Clean up downloads (skip library tracks)
             for filename in os.listdir(DOWNLOAD_FOLDER):
                 filepath = os.path.join(DOWNLOAD_FOLDER, filename)
                 if os.path.isfile(filepath) and now - os.path.getmtime(filepath) > 3600:
-                    os.remove(filepath)
-            # Clean up job files
+                    # Check if this file belongs to a library track
+                    job_id = filename.split('_')[0] if '_' in filename else None
+                    if job_id not in library_ids:
+                        os.remove(filepath)
+
+            # Clean up job files (skip library tracks and library.json)
             for filename in os.listdir(JOBS_FOLDER):
+                if filename == 'library.json':
+                    continue
                 filepath = os.path.join(JOBS_FOLDER, filename)
                 if os.path.isfile(filepath) and now - os.path.getmtime(filepath) > 3600:
-                    os.remove(filepath)
+                    job_id = filename.replace('.json', '')
+                    if job_id not in library_ids:
+                        os.remove(filepath)
         except Exception:
             pass
 
@@ -345,6 +433,9 @@ def process_nightcore(job_id, youtube_url, debug_mode=False):
 
         save_job(job_id, job_result)
 
+        # Add to library for sidebar playback
+        add_to_library(job_id, job_result['title'], job_result['filename'], nightcore_file)
+
     except subprocess.TimeoutExpired:
         save_job(job_id, {'status': 'error', 'message': 'Processing timed out.'})
     except Exception as e:
@@ -489,6 +580,26 @@ def stream(job_id):
 
     # No range request - return full file
     return send_file(file_path, mimetype='audio/mpeg')
+
+
+@app.route('/api/library', methods=['GET'])
+def list_library():
+    """List all tracks in the library"""
+    library = get_library()
+    # Filter out tracks whose files no longer exist
+    valid_tracks = []
+    for track in library:
+        if os.path.exists(track['file']):
+            valid_tracks.append(track)
+    return jsonify({'tracks': valid_tracks})
+
+
+@app.route('/api/library/<job_id>', methods=['DELETE'])
+def delete_from_library(job_id):
+    """Delete a track from the library"""
+    if remove_from_library(job_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Track not found'}), 404
 
 
 if __name__ == '__main__':

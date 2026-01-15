@@ -1,10 +1,12 @@
-# Voice samples (contain copyrighted audio)
-voices/
+# Audio files (generated/downloaded)
 *.wav
 *.mp3
 *.m4a
 *.ogg
 *.flac
+
+# Playwright test artifacts
+.playwright-mcp/
 
 # Output files
 output/

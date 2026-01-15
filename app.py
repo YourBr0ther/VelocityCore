@@ -5,8 +5,7 @@ import threading
 import time
 import re
 import json
-from flask import Flask, render_template, request, jsonify, send_file, url_for, Response
-from werkzeug.utils import secure_filename
+from flask import Flask, render_template, request, jsonify, send_file, Response
 
 app = Flask(__name__)
 
@@ -71,69 +70,9 @@ def sanitize_title(title):
 DOWNLOAD_FOLDER = '/app/downloads'
 JOBS_FOLDER = '/app/jobs'
 SEPARATED_FOLDER = '/app/separated'
-VOICES_FOLDER = '/app/voices'
-SEED_VC_PATH = '/app/seed-vc'
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 os.makedirs(JOBS_FOLDER, exist_ok=True)
 os.makedirs(SEPARATED_FOLDER, exist_ok=True)
-os.makedirs(VOICES_FOLDER, exist_ok=True)
-
-
-def convert_voice_seedvc(source_audio, reference_voice, output_path, singing_mode=True, semi_tone_shift=0):
-    """Convert voice using Seed-VC with singing voice conversion model
-
-    When singing_mode=True, uses the seed-uvit-whisper-base model (200M params, 44kHz)
-    which is specifically designed for singing voice conversion.
-    """
-    try:
-        print(f"[Seed-VC SVC] Starting singing voice conversion...", flush=True)
-        print(f"[Seed-VC SVC] Source: {source_audio}", flush=True)
-        print(f"[Seed-VC SVC] Reference: {reference_voice}", flush=True)
-        print(f"[Seed-VC SVC] Output: {output_path}", flush=True)
-        print(f"[Seed-VC SVC] Singing mode: {singing_mode}, Semi-tone shift: {semi_tone_shift}", flush=True)
-
-        # Run Seed-VC inference with SVC settings
-        # When f0-condition=True, it auto-downloads seed-uvit-whisper-base (SVC model)
-        cmd = [
-            'python', f'{SEED_VC_PATH}/inference.py',
-            '--source', source_audio,
-            '--target', reference_voice,
-            '--output', os.path.dirname(output_path),
-            '--diffusion-steps', '30',  # 30-50 recommended for singing
-            '--f0-condition', 'True' if singing_mode else 'False',
-            '--semi-tone-shift', str(semi_tone_shift),  # Pitch shift in semitones
-            '--inference-cfg-rate', '0.7'
-        ]
-        print(f"[Seed-VC SVC] Command: {' '.join(cmd)}", flush=True)
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, cwd=SEED_VC_PATH)
-
-        print(f"[Seed-VC SVC] Return code: {result.returncode}", flush=True)
-        if result.stdout:
-            print(f"[Seed-VC SVC] STDOUT: {result.stdout[:800]}", flush=True)
-        if result.stderr:
-            print(f"[Seed-VC SVC] STDERR: {result.stderr[:500]}", flush=True)
-
-        # Seed-VC outputs to a directory, find the output file
-        # Output format: vc_{source_basename}_{target_basename}_{params}.wav
-        output_dir = os.path.dirname(output_path)
-        source_basename = os.path.splitext(os.path.basename(source_audio))[0]
-        print(f"[Seed-VC SVC] Looking for output in: {output_dir}", flush=True)
-        print(f"[Seed-VC SVC] Source basename: {source_basename}", flush=True)
-        files_in_dir = os.listdir(output_dir)
-        print(f"[Seed-VC SVC] Files in output dir: {files_in_dir[:10]}", flush=True)
-
-        for f in files_in_dir:
-            # Match Seed-VC output pattern: vc_{source}_{target}_{params}.wav
-            if f.startswith(f'vc_{source_basename}') and f.endswith('.wav'):
-                actual_output = os.path.join(output_dir, f)
-                os.rename(actual_output, output_path)
-                print(f"[Seed-VC SVC] SUCCESS - output renamed to {output_path}", flush=True)
-                return True
-        print(f"[Seed-VC SVC] FAILED - no output file found", flush=True)
-        return False
-    except Exception as e:
-        print(f"[Seed-VC SVC] EXCEPTION: {e}", flush=True)
-        return False
 
 
 def get_job(job_id):
@@ -180,8 +119,8 @@ cleanup_thread = threading.Thread(target=cleanup_old_files, daemon=True)
 cleanup_thread.start()
 
 
-def process_nightcore(job_id, youtube_url, debug_mode=False, main_voice=None, sub_voice=None):
-    """Download from YouTube and convert to nightcore with vocal sub-layer and optional voice conversion"""
+def process_nightcore(job_id, youtube_url, debug_mode=False):
+    """Download from YouTube and convert to nightcore with vocal sub-layer"""
     try:
         save_job(job_id, {'status': 'downloading', 'progress': 5, 'debug': debug_mode})
 
@@ -259,46 +198,7 @@ def process_nightcore(job_id, youtube_url, debug_mode=False, main_voice=None, su
             vocals_sub = os.path.join(DOWNLOAD_FOLDER, f'{job_id}_vocals_sub.wav')
             other_nc = os.path.join(DOWNLOAD_FOLDER, f'{job_id}_other_nc.wav')
 
-            # Voice conversion step (if voices specified)
-            if main_voice or sub_voice:
-                print(f"[{job_id}] Starting voice conversion - main: {main_voice}, sub: {sub_voice}", flush=True)
-                save_job(job_id, {'status': 'voice_converting', 'progress': 55})
-
-                # Convert separated vocals to WAV for Seed-VC
-                vocals_wav = os.path.join(DOWNLOAD_FOLDER, f'{job_id}_vocals_raw.wav')
-                subprocess.run(['ffmpeg', '-i', vocals_file, '-y', vocals_wav],
-                              capture_output=True, timeout=60)
-                print(f"[{job_id}] Vocals WAV created: {os.path.exists(vocals_wav)}", flush=True)
-
-                if main_voice:
-                    # Convert main vocals to target voice
-                    main_voice_path = os.path.join(VOICES_FOLDER, secure_filename(main_voice))
-                    vocals_converted = os.path.join(DOWNLOAD_FOLDER, f'{job_id}_vocals_converted.wav')
-                    print(f"[{job_id}] Converting main voice with: {main_voice_path}", flush=True)
-                    if convert_voice_seedvc(vocals_wav, main_voice_path, vocals_converted, singing_mode=True):
-                        # Use converted vocals for processing
-                        print(f"[{job_id}] Main voice conversion SUCCESS", flush=True)
-                        vocals_file = vocals_converted
-                    else:
-                        # Fallback to original if conversion fails
-                        print(f"[{job_id}] Main voice conversion FAILED - using original", flush=True)
-                        vocals_file = vocals_wav
-
-                if sub_voice:
-                    # Convert vocals with sub voice for the sub-layer (will be pitch-shifted later)
-                    sub_voice_path = os.path.join(VOICES_FOLDER, secure_filename(sub_voice))
-                    vocals_sub_converted = os.path.join(DOWNLOAD_FOLDER, f'{job_id}_vocals_sub_converted.wav')
-                    print(f"[{job_id}] Converting sub voice with: {sub_voice_path}", flush=True)
-                    result = convert_voice_seedvc(vocals_wav, sub_voice_path, vocals_sub_converted, singing_mode=True)
-                    print(f"[{job_id}] Sub voice conversion result: {result}", flush=True)
-                    # Store for later use in sub-layer
-                    vocals_for_sub = vocals_sub_converted if os.path.exists(vocals_sub_converted) else vocals_wav
-                else:
-                    vocals_for_sub = None
-            else:
-                print(f"[{job_id}] No voice conversion requested", flush=True)
-
-            save_job(job_id, {'status': 'processing', 'progress': 65})
+            save_job(job_id, {'status': 'processing', 'progress': 60})
 
             # Apply nightcore speed+pitch to vocals with de-essing and high cut
             # - asetrate/aresample: speed up 25% with natural pitch rise
@@ -323,36 +223,11 @@ def process_nightcore(job_id, youtube_url, debug_mode=False, main_voice=None, su
             ], capture_output=True, timeout=120)
 
             # Create sub-octave vocals using rubberband (pitch down without speed change)
-            # Use converted sub voice if available, otherwise use main vocals
-            if main_voice or sub_voice:
-                if sub_voice and 'vocals_for_sub' in locals() and vocals_for_sub and os.path.exists(vocals_for_sub):
-                    # Apply nightcore to sub-voice converted vocals first
-                    vocals_sub_nc = os.path.join(DOWNLOAD_FOLDER, f'{job_id}_vocals_sub_nc.wav')
-                    subprocess.run([
-                        'ffmpeg', '-i', vocals_for_sub,
-                        '-af', 'asetrate=44100*1.25,aresample=44100',
-                        '-y', vocals_sub_nc
-                    ], capture_output=True, timeout=120)
-                    # Then pitch down
-                    subprocess.run([
-                        'rubberband',
-                        '-p', '-12',  # Pitch down 12 semitones (1 octave)
-                        vocals_sub_nc, vocals_sub
-                    ], capture_output=True, timeout=120)
-                else:
-                    # No sub voice, use main vocals for sub-layer
-                    subprocess.run([
-                        'rubberband',
-                        '-p', '-12',
-                        vocals_nc, vocals_sub
-                    ], capture_output=True, timeout=120)
-            else:
-                # No voice conversion, use regular sub-layer
-                subprocess.run([
-                    'rubberband',
-                    '-p', '-12',  # Pitch down 12 semitones (1 octave)
-                    vocals_nc, vocals_sub
-                ], capture_output=True, timeout=120)
+            subprocess.run([
+                'rubberband',
+                '-p', '-12',  # Pitch down 12 semitones (1 octave)
+                vocals_nc, vocals_sub
+            ], capture_output=True, timeout=120)
 
             save_job(job_id, {'status': 'mixing', 'progress': 80})
 
@@ -481,78 +356,11 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/api/voices', methods=['GET'])
-def list_voices():
-    """List available voice samples"""
-    voices = []
-    for filename in os.listdir(VOICES_FOLDER):
-        if filename.endswith(('.mp3', '.wav', '.m4a', '.ogg')):
-            voices.append({
-                'id': filename,
-                'name': os.path.splitext(filename)[0]
-            })
-    return jsonify({'voices': voices})
-
-
-@app.route('/api/voices/upload', methods=['POST'])
-def upload_voice():
-    """Upload a voice sample"""
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-
-    # Get custom name or use filename
-    voice_name = request.form.get('name', '')
-    if not voice_name:
-        voice_name = os.path.splitext(file.filename)[0]
-
-    # Secure the filename
-    safe_name = secure_filename(voice_name)
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in ['.mp3', '.wav', '.m4a', '.ogg']:
-        return jsonify({'error': 'Invalid file type. Use MP3, WAV, M4A, or OGG'}), 400
-
-    filename = f'{safe_name}{ext}'
-    filepath = os.path.join(VOICES_FOLDER, filename)
-    file.save(filepath)
-
-    return jsonify({
-        'success': True,
-        'voice': {
-            'id': filename,
-            'name': safe_name
-        }
-    })
-
-
-@app.route('/api/voices/<voice_id>', methods=['DELETE'])
-def delete_voice(voice_id):
-    """Delete a voice sample"""
-    filepath = os.path.join(VOICES_FOLDER, secure_filename(voice_id))
-    if os.path.exists(filepath):
-        os.remove(filepath)
-        return jsonify({'success': True})
-    return jsonify({'error': 'Voice not found'}), 404
-
-
 @app.route('/api/convert', methods=['POST'])
 def convert():
     data = request.get_json()
     youtube_url = data.get('url', '').strip()
     debug_mode = data.get('debug', False)
-    main_voice = data.get('main_voice', None)  # Voice for main vocals
-    sub_voice = data.get('sub_voice', None)    # Voice for sub-vocals (deep male)
-
-    # DEBUG: Log received parameters
-    print(f"=== CONVERT REQUEST ===", flush=True)
-    print(f"URL: {youtube_url}", flush=True)
-    print(f"Debug: {debug_mode}", flush=True)
-    print(f"Main Voice: {main_voice} (type: {type(main_voice)})", flush=True)
-    print(f"Sub Voice: {sub_voice} (type: {type(sub_voice)})", flush=True)
-    print(f"=======================", flush=True)
 
     if not youtube_url:
         return jsonify({'error': 'No URL provided'}), 400
@@ -561,22 +369,12 @@ def convert():
     if not ('youtube.com' in youtube_url or 'youtu.be' in youtube_url):
         return jsonify({'error': 'Please provide a valid YouTube URL'}), 400
 
-    # Validate voice files exist if specified
-    if main_voice:
-        main_voice_path = os.path.join(VOICES_FOLDER, secure_filename(main_voice))
-        if not os.path.exists(main_voice_path):
-            return jsonify({'error': f'Main voice "{main_voice}" not found'}), 400
-    if sub_voice:
-        sub_voice_path = os.path.join(VOICES_FOLDER, secure_filename(sub_voice))
-        if not os.path.exists(sub_voice_path):
-            return jsonify({'error': f'Sub voice "{sub_voice}" not found'}), 400
-
     # Generate job ID
     job_id = str(uuid.uuid4())[:8]
     save_job(job_id, {'status': 'queued', 'progress': 0, 'debug': debug_mode})
 
     # Start processing in background thread
-    thread = threading.Thread(target=process_nightcore, args=(job_id, youtube_url, debug_mode, main_voice, sub_voice))
+    thread = threading.Thread(target=process_nightcore, args=(job_id, youtube_url, debug_mode))
     thread.start()
 
     return jsonify({'job_id': job_id})

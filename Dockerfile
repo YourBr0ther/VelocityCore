@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -17,24 +17,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Install PyTorch with CUDA support (GPU)
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Install Demucs for vocal separation
 RUN pip install --no-cache-dir demucs soundfile
-
-# Clone and install Seed-VC for voice conversion
-RUN git clone https://github.com/Plachtaa/seed-vc.git /app/seed-vc
-WORKDIR /app/seed-vc
-RUN pip install --no-cache-dir -r requirements.txt || true
-# Install additional Seed-VC dependencies
-RUN pip install --no-cache-dir transformers accelerate safetensors einops librosa munch descript-audio-codec
-
-WORKDIR /app
 
 # Copy application code
 COPY app.py .
 COPY templates templates/
 COPY static static/
 
-# Create directories for voice samples and converted audio
-RUN mkdir -p /app/downloads /app/jobs /app/separated /app/voices
+# Create directories for processing
+RUN mkdir -p /app/downloads /app/jobs /app/separated
 
 # Expose port
 EXPOSE 5000

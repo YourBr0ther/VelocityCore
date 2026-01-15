@@ -714,95 +714,6 @@
             opacity: 1;
         }
 
-        /* Voice Selection */
-        .voice-section {
-            margin-top: 1.5rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid rgba(0, 255, 255, 0.2);
-        }
-
-        .voice-section-title {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 0.75rem;
-            letter-spacing: 0.2em;
-            color: var(--neon-cyan);
-            text-transform: uppercase;
-            margin-bottom: 1rem;
-            text-align: center;
-        }
-
-        .voice-row {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 1rem;
-        }
-
-        .voice-group {
-            flex: 1;
-        }
-
-        .voice-label {
-            display: block;
-            font-size: 0.7rem;
-            letter-spacing: 0.1em;
-            color: rgba(255, 255, 255, 0.6);
-            margin-bottom: 0.5rem;
-            text-transform: uppercase;
-        }
-
-        .voice-select {
-            width: 100%;
-            padding: 0.7rem 1rem;
-            font-family: 'Rajdhani', sans-serif;
-            font-size: 0.9rem;
-            background: rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(0, 255, 255, 0.3);
-            border-radius: 2px;
-            color: #fff;
-            cursor: pointer;
-            outline: none;
-            transition: all 0.3s ease;
-        }
-
-        .voice-select:hover, .voice-select:focus {
-            border-color: var(--neon-cyan);
-            box-shadow: var(--glow-cyan);
-        }
-
-        .voice-select option {
-            background: var(--deep-void);
-            color: #fff;
-        }
-
-        .voice-upload {
-            margin-top: 1rem;
-        }
-
-        .voice-upload-btn {
-            width: 100%;
-            padding: 0.7rem 1rem;
-            font-family: 'Orbitron', sans-serif;
-            font-size: 0.7rem;
-            font-weight: 500;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            background: transparent;
-            border: 1px dashed rgba(0, 255, 255, 0.4);
-            border-radius: 2px;
-            color: var(--neon-cyan);
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .voice-upload-btn:hover {
-            background: rgba(0, 255, 255, 0.1);
-            border-style: solid;
-        }
-
-        .voice-upload-input {
-            display: none;
-        }
-
         /* Responsive */
         @media (max-width: 600px) {
             .converter-card {
@@ -848,28 +759,6 @@
                 <input type="checkbox" id="debugToggle">
                 <span>Keep intermediate tracks for debugging</span>
             </label>
-
-            <div class="voice-section">
-                <div class="voice-section-title">Voice Conversion (Optional)</div>
-                <div class="voice-row">
-                    <div class="voice-group">
-                        <label class="voice-label">Main Vocals</label>
-                        <select class="voice-select" id="mainVoiceSelect">
-                            <option value="">Original Voice</option>
-                        </select>
-                    </div>
-                    <div class="voice-group">
-                        <label class="voice-label">Sub-Layer Voice</label>
-                        <select class="voice-select" id="subVoiceSelect">
-                            <option value="">Same as Main</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="voice-upload">
-                    <input type="file" class="voice-upload-input" id="voiceUploadInput" accept=".mp3,.wav,.m4a,.ogg">
-                    <button class="voice-upload-btn" id="voiceUploadBtn">+ Upload Voice Sample</button>
-                </div>
-            </div>
 
             <div class="error-message" id="errorMessage"></div>
 
@@ -991,10 +880,6 @@
         const visualizer = document.getElementById('visualizer');
         const debugSection = document.getElementById('debugSection');
         const debugButtons = document.getElementById('debugButtons');
-        const mainVoiceSelect = document.getElementById('mainVoiceSelect');
-        const subVoiceSelect = document.getElementById('subVoiceSelect');
-        const voiceUploadBtn = document.getElementById('voiceUploadBtn');
-        const voiceUploadInput = document.getElementById('voiceUploadInput');
 
         let currentJobId = null;
         let isPlaying = false;
@@ -1002,71 +887,6 @@
         // Initialize
         createParticles();
         createVisualizerBars();
-        loadVoices();
-
-        // Load available voices
-        async function loadVoices() {
-            try {
-                const response = await fetch('/api/voices');
-                const data = await response.json();
-
-                // Clear existing options (except first)
-                mainVoiceSelect.innerHTML = '<option value="">Original Voice</option>';
-                subVoiceSelect.innerHTML = '<option value="">Same as Main</option>';
-
-                data.voices.forEach(function(voice) {
-                    const opt1 = document.createElement('option');
-                    opt1.value = voice.id;
-                    opt1.textContent = voice.name;
-                    mainVoiceSelect.appendChild(opt1);
-
-                    const opt2 = document.createElement('option');
-                    opt2.value = voice.id;
-                    opt2.textContent = voice.name;
-                    subVoiceSelect.appendChild(opt2);
-                });
-            } catch (err) {
-                console.log('Failed to load voices:', err);
-            }
-        }
-
-        // Voice upload
-        voiceUploadBtn.addEventListener('click', function() {
-            voiceUploadInput.click();
-        });
-
-        voiceUploadInput.addEventListener('change', async function() {
-            const file = this.files[0];
-            if (!file) return;
-
-            const formData = new FormData();
-            formData.append('file', file);
-
-            voiceUploadBtn.textContent = 'Uploading...';
-            voiceUploadBtn.disabled = true;
-
-            try {
-                const response = await fetch('/api/voices/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    await loadVoices();
-                    // Select the newly uploaded voice
-                    mainVoiceSelect.value = data.voice.id;
-                } else {
-                    showError(data.error || 'Upload failed');
-                }
-            } catch (err) {
-                showError('Failed to upload voice');
-            }
-
-            voiceUploadBtn.textContent = '+ Upload Voice Sample';
-            voiceUploadBtn.disabled = false;
-            voiceUploadInput.value = '';
-        });
 
         // Animate visualizer bars randomly
         function animateVisualizerBars() {
@@ -1096,17 +916,13 @@
             playerSection.classList.remove('active');
 
             try {
-                const requestBody = {
-                    url: url,
-                    debug: debugToggle.checked,
-                    main_voice: mainVoiceSelect.value || null,
-                    sub_voice: subVoiceSelect.value || null
-                };
-                console.log('Sending request:', requestBody);
                 const response = await fetch('/api/convert', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody)
+                    body: JSON.stringify({
+                        url: url,
+                        debug: debugToggle.checked
+                    })
                 });
 
                 const data = await response.json();
@@ -1170,17 +986,13 @@
                     statusText.textContent = 'AI separating vocals...';
                     progressFill.style.width = '35%';
                     break;
-                case 'voice_converting':
-                    statusText.textContent = 'Converting voice (AI)...';
-                    progressFill.style.width = '45%';
-                    break;
                 case 'converting':
                     statusText.textContent = 'Converting to Nightcore...';
-                    progressFill.style.width = '55%';
+                    progressFill.style.width = '50%';
                     break;
                 case 'processing':
                     statusText.textContent = 'Creating vocal sub-layer...';
-                    progressFill.style.width = '70%';
+                    progressFill.style.width = '65%';
                     break;
                 case 'mixing':
                     statusText.textContent = 'Mixing final track...';
